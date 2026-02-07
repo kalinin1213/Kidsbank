@@ -1,18 +1,19 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { getTransactions as fetchTxns } from '@/lib/db';
 
 type AccountData = {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   name: string;
   balance: number;
   allowance: number;
 };
 
 type TransactionData = {
-  id: number;
-  account_id: number;
+  id: string;
+  account_id: string;
   type: 'allowance' | 'deposit' | 'withdrawal';
   amount: number;
   balance_after: number;
@@ -69,11 +70,11 @@ export default function TransactionHistory({
   isParent,
 }: {
   accounts: AccountData[];
-  selectedAccountId: number | null;
+  selectedAccountId: string | null;
   isParent: boolean;
 }) {
   const [transactions, setTransactions] = useState<TransactionData[]>([]);
-  const [accountId, setAccountId] = useState<number | null>(selectedAccountId);
+  const [accountId, setAccountId] = useState<string | null>(selectedAccountId);
   const [typeFilter, setTypeFilter] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -82,16 +83,14 @@ export default function TransactionHistory({
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (accountId) params.set('accountId', String(accountId));
-      if (typeFilter !== 'all') params.set('type', typeFilter);
-      if (startDate) params.set('startDate', startDate);
-      if (endDate) params.set('endDate', endDate);
-      params.set('limit', '100');
-
-      const res = await fetch(`/api/transactions?${params}`);
-      const data = await res.json();
-      setTransactions(data.transactions || []);
+      const results = await fetchTxns({
+        accountId: accountId || undefined,
+        type: typeFilter !== 'all' ? typeFilter : undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        maxResults: 100,
+      });
+      setTransactions(results);
     } catch {
       // Ignore
     } finally {
@@ -103,7 +102,7 @@ export default function TransactionHistory({
     fetchTransactions();
   }, [fetchTransactions]);
 
-  const getAccountName = (accId: number) => {
+  const getAccountName = (accId: string) => {
     return accounts.find((a) => a.id === accId)?.name || 'Unknown';
   };
 

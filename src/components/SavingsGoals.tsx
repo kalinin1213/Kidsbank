@@ -1,23 +1,24 @@
 'use client';
 
 import { useState } from 'react';
+import { createGoal as addGoal, updateGoal, deleteGoal } from '@/lib/db';
 
 type AccountData = {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   name: string;
   balance: number;
   allowance: number;
 };
 
 type GoalData = {
-  id: number;
-  account_id: number;
+  id: string;
+  account_id: string;
   name: string;
   target_amount: number;
   target_date: string | null;
   emoji: string | null;
-  is_completed: number;
+  is_completed: boolean;
 };
 
 function formatCHF(amount: number): string {
@@ -35,12 +36,12 @@ export default function SavingsGoals({
 }: {
   accounts: AccountData[];
   goals: GoalData[];
-  selectedAccountId: number | null;
+  selectedAccountId: string | null;
   isParent: boolean;
   onUpdate: () => void;
 }) {
   const [showForm, setShowForm] = useState(false);
-  const [formAccountId, setFormAccountId] = useState<number>(selectedAccountId || accounts[0]?.id || 0);
+  const [formAccountId, setFormAccountId] = useState<string>(selectedAccountId || accounts[0]?.id || '');
   const [name, setName] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
   const [targetDate, setTargetDate] = useState('');
@@ -55,11 +56,11 @@ export default function SavingsGoals({
   const activeGoals = filteredGoals.filter((g) => !g.is_completed);
   const completedGoals = filteredGoals.filter((g) => g.is_completed);
 
-  function getAccountBalance(accountId: number): number {
+  function getAccountBalance(accountId: string): number {
     return accounts.find((a) => a.id === accountId)?.balance || 0;
   }
 
-  function getAccountName(accountId: number): string {
+  function getAccountName(accountId: string): string {
     return accounts.find((a) => a.id === accountId)?.name || '';
   }
 
@@ -69,29 +70,13 @@ export default function SavingsGoals({
     setLoading(true);
 
     try {
-      const res = await fetch('/api/goals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accountId: formAccountId,
-          name,
-          targetAmount: parseFloat(targetAmount),
-          targetDate: targetDate || null,
-          emoji,
-        }),
-      });
-
-      if (res.ok) {
-        setShowForm(false);
-        setName('');
-        setTargetAmount('');
-        setTargetDate('');
-        setEmoji('🎯');
-        onUpdate();
-      } else {
-        const data = await res.json();
-        setError(data.error || 'Failed to create goal');
-      }
+      await addGoal({ accountId: formAccountId, name, targetAmount: parseFloat(targetAmount), targetDate: targetDate || undefined, emoji });
+      setShowForm(false);
+      setName('');
+      setTargetAmount('');
+      setTargetDate('');
+      setEmoji('🎯');
+      onUpdate();
     } catch {
       setError('Something went wrong');
     } finally {
@@ -101,21 +86,17 @@ export default function SavingsGoals({
 
   async function handleToggleComplete(goal: GoalData) {
     try {
-      await fetch('/api/goals', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: goal.id, isCompleted: !goal.is_completed }),
-      });
+      await updateGoal(goal.id, { is_completed: !goal.is_completed });
       onUpdate();
     } catch {
       // Ignore
     }
   }
 
-  async function handleDelete(goalId: number) {
+  async function handleDelete(goalId: string) {
     if (!confirm('Delete this goal?')) return;
     try {
-      await fetch(`/api/goals?id=${goalId}`, { method: 'DELETE' });
+      await deleteGoal(goalId);
       onUpdate();
     } catch {
       // Ignore

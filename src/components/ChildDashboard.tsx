@@ -1,16 +1,16 @@
 'use client';
 
 type AccountData = {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   name: string;
   balance: number;
   allowance: number;
 };
 
 type TransactionData = {
-  id: number;
-  account_id: number;
+  id: string;
+  account_id: string;
   type: 'allowance' | 'deposit' | 'withdrawal';
   amount: number;
   balance_after: number;
@@ -20,13 +20,13 @@ type TransactionData = {
 };
 
 type GoalData = {
-  id: number;
-  account_id: number;
+  id: string;
+  account_id: string;
   name: string;
   target_amount: number;
   target_date: string | null;
   emoji: string | null;
-  is_completed: number;
+  is_completed: boolean;
 };
 
 type View = 'dashboard' | 'history' | 'deposit' | 'withdraw' | 'goals' | 'settings';
@@ -69,7 +69,7 @@ export default function ChildDashboard({
   transactions: TransactionData[];
   goals: GoalData[];
   userName: string;
-  onAction: (action: View, accountId?: number) => void;
+  onAction: (action: View, accountId?: string) => void;
 }) {
   const isMark = userName === 'Mark';
   const colors = isMark

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { getAccounts, getTransactions, getGoals, getSettings, type Account, type Transaction, type SavingsGoal } from '@/lib/db';
 import ParentDashboard from './ParentDashboard';
 import ChildDashboard from './ChildDashboard';
 import TransactionHistory from './TransactionHistory';
@@ -8,19 +9,20 @@ import TransactionForm from './TransactionForm';
 import SavingsGoals from './SavingsGoals';
 import Settings from './Settings';
 
-type User = { userId: number; name: string; role: 'parent' | 'child' };
+type User = { userId: string; name: string; role: 'parent' | 'child' };
 
 type AccountData = {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   name: string;
   balance: number;
   allowance: number;
+  user_name: string;
 };
 
 type TransactionData = {
-  id: number;
-  account_id: number;
+  id: string;
+  account_id: string;
   type: 'allowance' | 'deposit' | 'withdrawal';
   amount: number;
   balance_after: number;
@@ -30,13 +32,13 @@ type TransactionData = {
 };
 
 type GoalData = {
-  id: number;
-  account_id: number;
+  id: string;
+  account_id: string;
   name: string;
   target_amount: number;
   target_date: string | null;
   emoji: string | null;
-  is_completed: number;
+  is_completed: boolean;
 };
 
 type View = 'dashboard' | 'history' | 'deposit' | 'withdraw' | 'goals' | 'settings';
@@ -44,29 +46,32 @@ type View = 'dashboard' | 'history' | 'deposit' | 'withdraw' | 'goals' | 'settin
 export default function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [view, setView] = useState<View>('dashboard');
   const [accounts, setAccounts] = useState<AccountData[]>([]);
-  const [transactions, setTransactions] = useState<Record<number, TransactionData[]>>({});
+  const [transactions, setTransactions] = useState<Record<string, TransactionData[]>>({});
   const [goals, setGoals] = useState<GoalData[]>([]);
-  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
-      const [accRes, goalsRes] = await Promise.all([
-        fetch('/api/accounts'),
-        fetch('/api/goals'),
+      const [accs, allGoals] = await Promise.all([
+        getAccounts(user.role, user.userId),
+        getGoals(),
       ]);
-      const accData = await accRes.json();
-      const goalsData = await goalsRes.json();
 
-      setAccounts(accData.accounts || []);
-      setGoals(goalsData.goals || []);
+      // Get allowance from settings
+      const { children } = await getSettings();
+      const accountsWithAllowance = accs.map((a) => {
+        const child = children.find((c) => c.id === a.user_id);
+        return { ...a, name: a.user_name, allowance: child?.allowance || 0 };
+      });
+
+      setAccounts(accountsWithAllowance);
+      setGoals(allGoals);
 
       // Fetch recent transactions for each account
-      const txnMap: Record<number, TransactionData[]> = {};
-      for (const acc of accData.accounts || []) {
-        const txnRes = await fetch(`/api/transactions?accountId=${acc.id}&limit=5`);
-        const txnData = await txnRes.json();
-        txnMap[acc.id] = txnData.transactions || [];
+      const txnMap: Record<string, TransactionData[]> = {};
+      for (const acc of accs) {
+        txnMap[acc.id] = await getTransactions({ accountId: acc.id, maxResults: 5 });
       }
       setTransactions(txnMap);
     } catch {
@@ -74,13 +79,13 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user.role, user.userId]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  function handleAction(action: View, accountId?: number) {
+  function handleAction(action: View, accountId?: string) {
     if (accountId) setSelectedAccountId(accountId);
     setView(action);
   }

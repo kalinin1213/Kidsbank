@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { completeSetup } from '@/lib/db';
 
 const USERS = [
   { name: 'Art', emoji: '👨', label: 'Art (Parent)' },
@@ -78,20 +79,10 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
   async function submitSetup(allPins: Record<string, string>) {
     setSubmitting(true);
     try {
-      const res = await fetch('/api/auth/setup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pins: allPins }),
-      });
-
-      if (res.ok) {
-        onComplete();
-      } else {
-        const data = await res.json();
-        setError(data.error || 'Setup failed');
-      }
+      await completeSetup(allPins);
+      onComplete();
     } catch {
-      setError('Something went wrong');
+      setError('Setup failed. Check your Firebase configuration.');
     } finally {
       setSubmitting(false);
     }

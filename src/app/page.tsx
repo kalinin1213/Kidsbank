@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react';
 import LoginScreen from '@/components/LoginScreen';
 import SetupWizard from '@/components/SetupWizard';
 import Dashboard from '@/components/Dashboard';
+import { isSetupComplete, processAllowances } from '@/lib/db';
 
 type User = {
-  userId: number;
+  userId: string;
   name: string;
   role: 'parent' | 'child';
 };
@@ -14,34 +15,40 @@ type User = {
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [setupComplete, setSetupComplete] = useState(true);
+  const [setupDone, setSetupDone] = useState(true);
 
   useEffect(() => {
-    checkSetupAndSession();
+    checkSetup();
   }, []);
 
-  async function checkSetupAndSession() {
+  async function checkSetup() {
     try {
-      const setupRes = await fetch('/api/auth/setup');
-      const setupData = await setupRes.json();
-      setSetupComplete(setupData.setupComplete);
+      const done = await isSetupComplete();
+      setSetupDone(done);
 
-      if (setupData.setupComplete) {
-        const sessionRes = await fetch('/api/auth/session');
-        const sessionData = await sessionRes.json();
-        if (sessionData.user) {
-          setUser(sessionData.user);
+      if (done) {
+        const saved = localStorage.getItem('kidsbank_session');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          setUser(parsed);
+          processAllowances().catch(() => {});
         }
       }
     } catch {
-      // Ignore
+      setSetupDone(false);
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleLogout() {
-    await fetch('/api/auth/logout', { method: 'POST' });
+  function handleLogin(u: User) {
+    localStorage.setItem('kidsbank_session', JSON.stringify(u));
+    setUser(u);
+    processAllowances().catch(() => {});
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('kidsbank_session');
     setUser(null);
   }
 
@@ -55,12 +62,12 @@ export default function Home() {
     );
   }
 
-  if (!setupComplete) {
-    return <SetupWizard onComplete={() => { setSetupComplete(true); }} />;
+  if (!setupDone) {
+    return <SetupWizard onComplete={() => setSetupDone(true)} />;
   }
 
   if (!user) {
-    return <LoginScreen onLogin={(u) => setUser(u)} />;
+    return <LoginScreen onLogin={handleLogin} />;
   }
 
   return <Dashboard user={user} onLogout={handleLogout} />;
