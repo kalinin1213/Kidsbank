@@ -1,9 +1,10 @@
 const CACHE_NAME = 'kidsbank-v1';
+const BASE_PATH = '/Kidsbank';
 const STATIC_ASSETS = [
-  '/',
-  '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
+  BASE_PATH + '/',
+  BASE_PATH + '/manifest.json',
+  BASE_PATH + '/icons/icon-192.png',
+  BASE_PATH + '/icons/icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -24,14 +25,6 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-
-  // Network-first for API calls
-  if (request.url.includes('/api/')) {
-    event.respondWith(
-      fetch(request).catch(() => caches.match(request))
-    );
-    return;
-  }
 
   // Cache-first for static assets, network-first for pages
   if (request.destination === 'image' || request.destination === 'style' || request.destination === 'script') {
