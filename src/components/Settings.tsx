@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { getSettings, updatePin, updateAllowance, updateAllowanceDay } from '@/lib/db';
 
 type ChildData = {
-  id: number;
+  id: string;
   name: string;
   allowance: number;
 };
@@ -28,10 +29,9 @@ export default function Settings({ onBack }: { onBack: () => void }) {
 
   async function fetchSettings() {
     try {
-      const res = await fetch('/api/settings');
-      const data = await res.json();
-      setSettings(data.settings || {});
-      setChildren(data.children || []);
+      const data = await getSettings();
+      setSettings(data.settings as Record<string, string>);
+      setChildren(data.children);
     } catch {
       // Ignore
     } finally {
@@ -47,20 +47,10 @@ export default function Settings({ onBack }: { onBack: () => void }) {
 
     setPinLoading(true);
     try {
-      const res = await fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'pin', userName: selectedPinUser, newPin }),
-      });
-
-      if (res.ok) {
-        setMessage(`PIN updated for ${selectedPinUser}`);
-        setNewPin('');
-        setSelectedPinUser('');
-      } else {
-        const data = await res.json();
-        setMessage(data.error || 'Failed to update PIN');
-      }
+      await updatePin(selectedPinUser, newPin);
+      setMessage(`PIN updated for ${selectedPinUser}`);
+      setNewPin('');
+      setSelectedPinUser('');
     } catch {
       setMessage('Something went wrong');
     } finally {
@@ -68,16 +58,12 @@ export default function Settings({ onBack }: { onBack: () => void }) {
     }
   }
 
-  async function handleAllowanceChange(childId: number, amount: string) {
+  async function handleAllowanceChange(childId: string, amount: string) {
     const parsed = parseFloat(amount);
     if (isNaN(parsed) || parsed < 0) return;
 
     try {
-      await fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'allowance', userId: childId, amount: parsed }),
-      });
+      await updateAllowance(childId, parsed);
       setChildren(children.map((c) => (c.id === childId ? { ...c, allowance: parsed } : c)));
       setMessage('Allowance updated');
     } catch {
@@ -87,11 +73,7 @@ export default function Settings({ onBack }: { onBack: () => void }) {
 
   async function handleDayChange(day: string) {
     try {
-      await fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'allowance_day', day }),
-      });
+      await updateAllowanceDay(day);
       setSettings({ ...settings, allowance_day: day });
       setMessage('Allowance day updated');
     } catch {

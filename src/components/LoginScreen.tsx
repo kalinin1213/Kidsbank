@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { loginUser } from '@/lib/db';
 
-type User = { userId: number; name: string; role: 'parent' | 'child' };
+type User = { userId: string; name: string; role: 'parent' | 'child' };
 
 const USERS = [
   { name: 'Art', emoji: '👨', color: 'bg-emerald-500 hover:bg-emerald-600', role: 'parent' },
@@ -17,27 +18,20 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: User) => void
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  async function handleLogin() {
-    if (pin.length !== 4) return;
+  async function attemptLogin(name: string, pinValue: string) {
     setLoading(true);
     setError('');
-
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: selectedUser, pin }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        onLogin(data.user);
+      const user = await loginUser(name, pinValue);
+      if (user) {
+        onLogin({ userId: user.id, name: user.name, role: user.role });
       } else {
-        setError(data.error || 'Wrong PIN');
+        setError('Wrong PIN');
         setPin('');
       }
     } catch {
       setError('Something went wrong');
+      setPin('');
     } finally {
       setLoading(false);
     }
@@ -48,30 +42,7 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: User) => void
       const newPin = pin + digit;
       setPin(newPin);
       if (newPin.length === 4) {
-        // Auto-submit after 4 digits
-        setTimeout(() => {
-          setLoading(true);
-          setError('');
-          fetch('/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: selectedUser, pin: newPin }),
-          })
-            .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
-            .then(({ ok, data }) => {
-              if (ok) {
-                onLogin(data.user);
-              } else {
-                setError(data.error || 'Wrong PIN');
-                setPin('');
-              }
-            })
-            .catch(() => {
-              setError('Something went wrong');
-              setPin('');
-            })
-            .finally(() => setLoading(false));
-        }, 200);
+        setTimeout(() => attemptLogin(selectedUser!, newPin), 200);
       }
     }
   }
@@ -117,7 +88,6 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: User) => void
       <div className="text-6xl mb-4">{selectedUserData.emoji}</div>
       <h2 className="text-2xl font-bold text-gray-700 mb-8">Enter PIN for {selectedUser}</h2>
 
-      {/* PIN dots */}
       <div className="flex gap-4 mb-6">
         {[0, 1, 2, 3].map((i) => (
           <div
@@ -129,11 +99,8 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: User) => void
         ))}
       </div>
 
-      {error && (
-        <p className="text-red-500 font-medium mb-4">{error}</p>
-      )}
+      {error && <p className="text-red-500 font-medium mb-4">{error}</p>}
 
-      {/* Number pad */}
       <div className="grid grid-cols-3 gap-3 w-full max-w-xs">
         {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'].map((key) => {
           if (key === '') return <div key="empty" />;

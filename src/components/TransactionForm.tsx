@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import { createTransaction } from '@/lib/db';
 
 type AccountData = {
-  id: number;
-  user_id: number;
+  id: string;
+  user_id: string;
   name: string;
   balance: number;
   allowance: number;
@@ -19,11 +20,11 @@ export default function TransactionForm({
 }: {
   type: 'deposit' | 'withdrawal';
   accounts: AccountData[];
-  selectedAccountId: number | null;
+  selectedAccountId: string | null;
   userName: string;
   onComplete: () => void;
 }) {
-  const [accountId, setAccountId] = useState<number>(selectedAccountId || accounts[0]?.id || 0);
+  const [accountId, setAccountId] = useState<string>(selectedAccountId || accounts[0]?.id || '');
   const [amount, setAmount] = useState('');
   const [comment, setComment] = useState('');
   const [date, setDate] = useState('');
@@ -57,28 +58,18 @@ export default function TransactionForm({
     setLoading(true);
 
     try {
-      const res = await fetch('/api/transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          accountId,
-          type,
-          amount: parsedAmount,
-          comment: comment.trim(),
-          date: date || undefined,
-        }),
+      const result = await createTransaction({
+        accountId,
+        type,
+        amount: parsedAmount,
+        comment: comment.trim(),
+        performedBy: userName,
+        date: date || undefined,
       });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setSuccess(true);
-        setTimeout(onComplete, 1500);
-      } else {
-        setError(data.error || 'Something went wrong');
-      }
-    } catch {
-      setError('Something went wrong');
+      setSuccess(true);
+      setTimeout(onComplete, 1500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setLoading(false);
     }
