@@ -3,7 +3,6 @@ import {
   initializeFirestore,
   getFirestore,
   persistentLocalCache,
-  persistentMultipleTabManager,
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -20,9 +19,7 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0
 function createFirestore() {
   try {
     return initializeFirestore(app, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager(),
-      }),
+      localCache: persistentLocalCache(),
     });
   } catch {
     // Already initialized (e.g., HMR in dev mode)
