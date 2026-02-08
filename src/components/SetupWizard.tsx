@@ -78,11 +78,23 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
 
   async function submitSetup(allPins: Record<string, string>) {
     setSubmitting(true);
+    setError('');
     try {
-      await completeSetup(allPins);
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 15000)
+      );
+      await Promise.race([completeSetup(allPins), timeout]);
       onComplete();
-    } catch {
-      setError('Setup failed. Check your Firebase configuration.');
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.message === 'timeout'
+          ? 'Setup is taking too long. Please check your connection and try again.'
+          : 'Setup failed. Please check your connection and try again.';
+      setError(msg);
+      // Reset PIN entry so user can retry the last step
+      setCurrentPin('');
+      setConfirmPin('');
+      setIsConfirming(false);
     } finally {
       setSubmitting(false);
     }
@@ -110,22 +122,26 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
       <div className="text-5xl mb-3">{currentUser.emoji}</div>
       <h2 className="text-xl font-bold text-gray-700 mb-1">{currentUser.label}</h2>
       <p className="text-gray-500 mb-6">
-        {isConfirming ? 'Confirm PIN' : 'Choose a 4-digit PIN'}
+        {submitting ? 'Saving...' : isConfirming ? 'Confirm PIN' : 'Choose a 4-digit PIN'}
       </p>
 
       {/* PIN dots */}
       <div className="flex gap-4 mb-6">
-        {[0, 1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className={`w-5 h-5 rounded-full transition-all ${
-              i < activePin.length ? 'bg-emerald-500 scale-110' : 'bg-gray-300'
-            }`}
-          />
-        ))}
+        {submitting ? (
+          <div className="w-6 h-6 border-3 border-emerald-200 border-t-emerald-500 rounded-full animate-spin" />
+        ) : (
+          [0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className={`w-5 h-5 rounded-full transition-all ${
+                i < activePin.length ? 'bg-emerald-500 scale-110' : 'bg-gray-300'
+              }`}
+            />
+          ))
+        )}
       </div>
 
-      {error && <p className="text-red-500 font-medium mb-4">{error}</p>}
+      {error && <p className="text-red-500 font-medium mb-4 text-center px-4">{error}</p>}
 
       {/* Number pad */}
       <div className="grid grid-cols-3 gap-3 w-full max-w-xs">
