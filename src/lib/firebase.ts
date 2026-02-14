@@ -15,6 +15,22 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '',
 };
 
+const REQUIRED_CONFIG_KEYS = ['apiKey', 'projectId', 'appId'] as const;
+
+export function getFirebaseConfigErrors(): string[] {
+  const errors: string[] = [];
+  for (const key of REQUIRED_CONFIG_KEYS) {
+    if (!firebaseConfig[key]) {
+      errors.push(key);
+    }
+  }
+  return errors;
+}
+
+export function isFirebaseConfigured(): boolean {
+  return getFirebaseConfigErrors().length === 0;
+}
+
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 function createFirestore() {
