@@ -23,7 +23,10 @@ export default function Home() {
 
   async function checkSetup() {
     try {
-      const done = await isSetupComplete();
+      const timeout = new Promise<boolean>((resolve) =>
+        setTimeout(() => resolve(false), 5000)
+      );
+      const done = await Promise.race([isSetupComplete(), timeout]);
       setSetupDone(done);
 
       if (done) {
