@@ -15,7 +15,7 @@ import {
   runTransaction,
   writeBatch,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, isFirebaseConfigured, getFirebaseConfigErrors } from './firebase';
 
 // ---- Types ----
 
@@ -78,11 +78,24 @@ export async function verifyPin(pin: string, hash: string): Promise<boolean> {
 // ---- Setup ----
 
 export async function isSetupComplete(): Promise<boolean> {
+  if (!isFirebaseConfigured()) {
+    console.warn('[KidsBank] Firebase not configured — skipping setup check.');
+    return false;
+  }
   const settingsDoc = await getDoc(doc(db, 'settings', 'app'));
   return settingsDoc.exists() && settingsDoc.data()?.setup_complete === true;
 }
 
 export async function completeSetup(pins: Record<string, string>): Promise<void> {
+  if (!isFirebaseConfigured()) {
+    const missing = getFirebaseConfigErrors();
+    throw new Error(
+      `Firebase is not configured. Missing: ${missing.map((k) => `NEXT_PUBLIC_FIREBASE_${k === 'apiKey' ? 'API_KEY' : k === 'projectId' ? 'PROJECT_ID' : 'APP_ID'}`).join(', ')}. ` +
+      'Copy .env.example to .env.local and fill in your Firebase project values.'
+    );
+  }
+
+  console.log('[KidsBank] Starting setup, writing to Firestore...');
   const batch = writeBatch(db);
 
   // Create users
@@ -121,7 +134,19 @@ export async function completeSetup(pins: Record<string, string>): Promise<void>
     last_allowance_date: '',
   });
 
-  await batch.commit();
+  try {
+    await batch.commit();
+    console.log('[KidsBank] Setup complete — all documents written to Firestore.');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[KidsBank] Firestore batch commit failed:', msg);
+    if (msg.includes('PERMISSION_DENIED') || msg.includes('permission')) {
+      throw new Error(
+        'Firestore denied the write. Update your Firestore Security Rules to allow reads/writes for the collections: users, accounts, settings, transactions, goals.'
+      );
+    }
+    throw err;
+  }
 }
 
 // ---- Auth ----
@@ -130,6 +155,10 @@ export async function loginUser(
   name: string,
   pin: string
 ): Promise<User | null> {
+  if (!isFirebaseConfigured()) {
+    console.error('[KidsBank] Cannot log in — Firebase is not configured.');
+    return null;
+  }
   const userDoc = await getDoc(doc(db, 'users', name.toLowerCase()));
   if (!userDoc.exists()) return null;
 

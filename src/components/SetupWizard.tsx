@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { completeSetup } from '@/lib/db';
+import { isFirebaseConfigured, getFirebaseConfigErrors } from '@/lib/firebase';
 
 const USERS = [
   { name: 'Art', emoji: '👨', label: 'Art (Parent)' },
@@ -18,6 +19,16 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [configOk, setConfigOk] = useState(true);
+  const [configErrors, setConfigErrors] = useState<string[]>([]);
+
+  useEffect(() => {
+    const ok = isFirebaseConfigured();
+    setConfigOk(ok);
+    if (!ok) {
+      setConfigErrors(getFirebaseConfigErrors());
+    }
+  }, []);
 
   const currentUser = USERS[step];
 
@@ -79,20 +90,25 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
   async function submitSetup(allPins: Record<string, string>) {
     setSubmitting(true);
     setError('');
+    console.log('[KidsBank] Submitting setup with PINs for:', Object.keys(allPins).join(', '));
     try {
       const timeout = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('timeout')), 15000)
       );
       await Promise.race([completeSetup(allPins), timeout]);
+      console.log('[KidsBank] Setup succeeded, transitioning to login.');
       onComplete();
     } catch (err) {
       let msg: string;
       if (err instanceof Error && err.message === 'timeout') {
-        msg = 'Setup is taking too long. Please try again.';
+        msg =
+          'Setup is taking too long — Firestore may be unreachable. ' +
+          'Check your Firebase config in .env.local and your Firestore security rules.';
       } else {
         const detail = err instanceof Error ? err.message : String(err);
         msg = `Setup failed: ${detail}`;
       }
+      console.error('[KidsBank] Setup error:', msg);
       setError(msg);
     } finally {
       setSubmitting(false);
@@ -106,6 +122,29 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-blue-50 flex flex-col items-center justify-center p-4">
       <h1 className="text-3xl font-bold text-emerald-700 mb-2">Kids Bank Setup</h1>
       <p className="text-gray-500 mb-8">Set a 4-digit PIN for each family member</p>
+
+      {!configOk && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 max-w-sm text-sm text-red-700">
+          <p className="font-bold mb-1">Firebase not configured</p>
+          <p>
+            Missing env vars:{' '}
+            {configErrors
+              .map((k) =>
+                k === 'apiKey'
+                  ? 'NEXT_PUBLIC_FIREBASE_API_KEY'
+                  : k === 'projectId'
+                    ? 'NEXT_PUBLIC_FIREBASE_PROJECT_ID'
+                    : 'NEXT_PUBLIC_FIREBASE_APP_ID'
+              )
+              .join(', ')}
+          </p>
+          <p className="mt-1">
+            Copy <code className="bg-red-100 px-1 rounded">.env.example</code> to{' '}
+            <code className="bg-red-100 px-1 rounded">.env.local</code> and add your Firebase
+            project credentials.
+          </p>
+        </div>
+      )}
 
       {/* Progress */}
       <div className="flex gap-2 mb-8">
@@ -141,7 +180,11 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
         )}
       </div>
 
-      {error && <p className="text-red-500 font-medium mb-4 text-center px-4">{error}</p>}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 max-w-sm text-sm text-red-600 text-center">
+          {error}
+        </div>
+      )}
 
       {canRetry ? (
         <button
