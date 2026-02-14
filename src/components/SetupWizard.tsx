@@ -86,21 +86,21 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
       await Promise.race([completeSetup(allPins), timeout]);
       onComplete();
     } catch (err) {
-      const msg =
-        err instanceof Error && err.message === 'timeout'
-          ? 'Setup is taking too long. Please check your connection and try again.'
-          : 'Setup failed. Please check your connection and try again.';
+      let msg: string;
+      if (err instanceof Error && err.message === 'timeout') {
+        msg = 'Setup is taking too long. Please try again.';
+      } else {
+        const detail = err instanceof Error ? err.message : String(err);
+        msg = `Setup failed: ${detail}`;
+      }
       setError(msg);
-      // Reset PIN entry so user can retry the last step
-      setCurrentPin('');
-      setConfirmPin('');
-      setIsConfirming(false);
     } finally {
       setSubmitting(false);
     }
   }
 
   const activePin = isConfirming ? confirmPin : currentPin;
+  const canRetry = !submitting && error !== '' && Object.keys(pins).length === USERS.length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-blue-50 flex flex-col items-center justify-center p-4">
@@ -122,14 +122,14 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
       <div className="text-5xl mb-3">{currentUser.emoji}</div>
       <h2 className="text-xl font-bold text-gray-700 mb-1">{currentUser.label}</h2>
       <p className="text-gray-500 mb-6">
-        {submitting ? 'Saving...' : isConfirming ? 'Confirm PIN' : 'Choose a 4-digit PIN'}
+        {submitting ? 'Saving...' : canRetry ? 'Could not save' : isConfirming ? 'Confirm PIN' : 'Choose a 4-digit PIN'}
       </p>
 
-      {/* PIN dots */}
+      {/* PIN dots or spinner */}
       <div className="flex gap-4 mb-6">
         {submitting ? (
           <div className="w-6 h-6 border-3 border-emerald-200 border-t-emerald-500 rounded-full animate-spin" />
-        ) : (
+        ) : canRetry ? null : (
           [0, 1, 2, 3].map((i) => (
             <div
               key={i}
@@ -143,34 +143,43 @@ export default function SetupWizard({ onComplete }: { onComplete: () => void }) 
 
       {error && <p className="text-red-500 font-medium mb-4 text-center px-4">{error}</p>}
 
-      {/* Number pad */}
-      <div className="grid grid-cols-3 gap-3 w-full max-w-xs">
-        {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'].map((key) => {
-          if (key === '') return <div key="empty" />;
-          if (key === 'del') {
+      {canRetry ? (
+        <button
+          onClick={() => submitSetup(pins)}
+          className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-2xl shadow-md transition-colors active:scale-95"
+        >
+          Try Again
+        </button>
+      ) : (
+        /* Number pad */
+        <div className="grid grid-cols-3 gap-3 w-full max-w-xs">
+          {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'].map((key) => {
+            if (key === '') return <div key="empty" />;
+            if (key === 'del') {
+              return (
+                <button
+                  key="del"
+                  onClick={handleBackspace}
+                  disabled={submitting}
+                  className="w-full aspect-square rounded-2xl bg-gray-200 hover:bg-gray-300 text-gray-600 font-bold text-xl flex items-center justify-center transition-colors disabled:opacity-50"
+                >
+                  &larr;
+                </button>
+              );
+            }
             return (
               <button
-                key="del"
-                onClick={handleBackspace}
-                disabled={submitting}
-                className="w-full aspect-square rounded-2xl bg-gray-200 hover:bg-gray-300 text-gray-600 font-bold text-xl flex items-center justify-center transition-colors disabled:opacity-50"
+                key={key}
+                onClick={() => handlePinDigit(key)}
+                disabled={submitting || activePin.length >= 4}
+                className="w-full aspect-square rounded-2xl bg-white hover:bg-gray-100 text-gray-800 font-bold text-2xl shadow-md flex items-center justify-center transition-colors disabled:opacity-50 active:scale-95"
               >
-                &larr;
+                {key}
               </button>
             );
-          }
-          return (
-            <button
-              key={key}
-              onClick={() => handlePinDigit(key)}
-              disabled={submitting || activePin.length >= 4}
-              className="w-full aspect-square rounded-2xl bg-white hover:bg-gray-100 text-gray-800 font-bold text-2xl shadow-md flex items-center justify-center transition-colors disabled:opacity-50 active:scale-95"
-            >
-              {key}
-            </button>
-          );
-        })}
-      </div>
+          })}
+        </div>
+      )}
     </div>
   );
 }
