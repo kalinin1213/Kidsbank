@@ -394,7 +394,7 @@ export async function processAllowances(): Promise<{ processed: number }> {
     checkDate.setDate(checkDate.getDate() + 1);
   } else {
     checkDate = new Date(today);
-    checkDate.setDate(checkDate.getDate() - 7);
+    checkDate.setDate(checkDate.getDate() - 6);
   }
 
   while (checkDate <= today) {
