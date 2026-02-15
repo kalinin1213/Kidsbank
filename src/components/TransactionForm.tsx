@@ -131,19 +131,30 @@ export default function TransactionForm({
           </div>
         )}
 
-        {/* Amount */}
-        <div>
-          <label className="block text-sm font-medium text-gray-600 mb-2">Amount (CHF)</label>
-          <input
-            type="number"
-            step="0.01"
-            min="0.01"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="0.00"
-            className="input-field text-2xl text-center font-bold"
-            required
-          />
+        {/* Amount & Date */}
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-600 mb-2">Amount (CHF)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+              className="input-field text-xl text-center font-bold"
+              required
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-600 mb-2">Date</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="input-field appearance-none min-w-0"
+            />
+          </div>
         </div>
 
         {/* Comment */}
@@ -158,19 +169,6 @@ export default function TransactionForm({
             placeholder={isDeposit ? 'e.g., Birthday money from Grandma' : 'e.g., Lego Star Wars set'}
             className="input-field"
             required
-          />
-        </div>
-
-        {/* Date */}
-        <div>
-          <label className="block text-sm font-medium text-gray-600 mb-2">
-            Date
-          </label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="input-field appearance-none min-w-0"
           />
         </div>
 
