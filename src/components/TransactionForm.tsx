@@ -160,7 +160,7 @@ export default function TransactionForm({
         {/* Comment */}
         <div>
           <label className="block text-sm font-medium text-gray-600 mb-2">
-            What&apos;s it for? *
+            {isDeposit ? 'Source of money' : 'What\u0027s it for?'} *
           </label>
           <input
             type="text"
