@@ -27,7 +27,7 @@ export default function TransactionForm({
   const [accountId, setAccountId] = useState<string>(selectedAccountId || accounts[0]?.id || '');
   const [amount, setAmount] = useState('');
   const [comment, setComment] = useState('');
-  const [date, setDate] = useState('');
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -161,20 +161,18 @@ export default function TransactionForm({
           />
         </div>
 
-        {/* Date (optional, for parents) */}
-        {isDeposit && (
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-2">
-              Date (optional, defaults to today)
-            </label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="input-field"
-            />
-          </div>
-        )}
+        {/* Date */}
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-2">
+            Date
+          </label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="input-field appearance-none min-w-0"
+          />
+        </div>
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl p-3 text-center font-medium">
