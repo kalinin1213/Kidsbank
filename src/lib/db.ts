@@ -53,6 +53,7 @@ export type SavingsGoal = {
   target_date: string | null;
   emoji: string | null;
   is_completed: boolean;
+  sort_order?: number;
 };
 
 // ---- Simple PIN hashing (SHA-256, client-side) ----
@@ -282,15 +283,23 @@ export async function getGoals(accountId?: string): Promise<SavingsGoal[]> {
   if (accountId) {
     q = query(
       collection(db, 'goals'),
-      where('account_id', '==', accountId),
-      orderBy('created_at', 'desc')
+      where('account_id', '==', accountId)
     );
   } else {
-    q = query(collection(db, 'goals'), orderBy('created_at', 'desc'));
+    q = query(collection(db, 'goals'));
   }
 
   const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as SavingsGoal));
+  const goals = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as SavingsGoal));
+
+  // Client-side sort: by sort_order ascending (legacy docs without sort_order go to end)
+  goals.sort((a, b) => {
+    const orderA = a.sort_order ?? Infinity;
+    const orderB = b.sort_order ?? Infinity;
+    return orderA - orderB;
+  });
+
+  return goals;
 }
 
 export async function createGoal(params: {
@@ -300,6 +309,13 @@ export async function createGoal(params: {
   targetDate?: string;
   emoji?: string;
 }): Promise<SavingsGoal> {
+  // Determine the next sort_order for this account
+  const existingGoals = await getGoals(params.accountId);
+  const maxOrder = existingGoals.reduce(
+    (max, g) => Math.max(max, g.sort_order ?? 0),
+    0
+  );
+
   const docRef = await addDoc(collection(db, 'goals'), {
     account_id: params.accountId,
     name: params.name,
@@ -307,6 +323,7 @@ export async function createGoal(params: {
     target_date: params.targetDate || null,
     emoji: params.emoji || null,
     is_completed: false,
+    sort_order: maxOrder + 1,
     created_at: new Date().toISOString(),
   });
 
@@ -322,6 +339,7 @@ export async function updateGoal(
     target_date: string | null;
     emoji: string | null;
     is_completed: boolean;
+    sort_order: number;
   }>
 ): Promise<void> {
   await updateDoc(doc(db, 'goals', goalId), updates);
@@ -329,6 +347,14 @@ export async function updateGoal(
 
 export async function deleteGoal(goalId: string): Promise<void> {
   await deleteDoc(doc(db, 'goals', goalId));
+}
+
+export async function reorderGoals(goalIds: string[]): Promise<void> {
+  const batch = writeBatch(db);
+  goalIds.forEach((id, index) => {
+    batch.update(doc(db, 'goals', id), { sort_order: index });
+  });
+  await batch.commit();
 }
 
 // ---- Settings ----

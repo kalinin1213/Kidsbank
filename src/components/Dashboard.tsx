@@ -39,6 +39,7 @@ type GoalData = {
   target_date: string | null;
   emoji: string | null;
   is_completed: boolean;
+  sort_order?: number;
 };
 
 type View = 'dashboard' | 'history' | 'deposit' | 'withdraw' | 'goals' | 'settings';

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { createGoal as addGoal, updateGoal, deleteGoal } from '@/lib/db';
+import { createGoal as addGoal, updateGoal, deleteGoal, reorderGoals } from '@/lib/db';
+import { computeGoalAllocations } from '@/lib/goalUtils';
 
 type AccountData = {
   id: string;
@@ -19,6 +20,7 @@ type GoalData = {
   target_date: string | null;
   emoji: string | null;
   is_completed: boolean;
+  sort_order?: number;
 };
 
 function formatCHF(amount: number): string {
@@ -103,6 +105,24 @@ export default function SavingsGoals({
     }
   }
 
+  async function handleMoveGoal(goalId: string, direction: 'up' | 'down') {
+    const index = activeGoals.findIndex((g) => g.id === goalId);
+    if (index < 0) return;
+
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= activeGoals.length) return;
+
+    const reordered = [...activeGoals];
+    [reordered[index], reordered[swapIndex]] = [reordered[swapIndex], reordered[index]];
+
+    try {
+      await reorderGoals(reordered.map((g) => g.id));
+      onUpdate();
+    } catch {
+      // Ignore
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -171,7 +191,7 @@ export default function SavingsGoals({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Nintendo Switch"
+              placeholder="e.g. toy, event, etc"
               className="input-field"
               required
             />
@@ -223,67 +243,104 @@ export default function SavingsGoals({
       )}
 
       <div className="space-y-4">
-        {activeGoals.map((goal) => {
-          const balance = getAccountBalance(goal.account_id);
-          const percent = Math.min(100, (balance / goal.target_amount) * 100);
-          const remaining = Math.max(0, goal.target_amount - balance);
-          const childName = getAccountName(goal.account_id);
-          const isMarkAccount = childName === 'Mark';
+        {(() => {
+          // Group active goals by account and compute sequential allocations per account
+          const allocationsByGoalId = new Map<string, { allocated: number; percent: number; remaining: number }>();
+          const goalsByAccount = new Map<string, GoalData[]>();
 
-          return (
-            <div key={goal.id} className="card">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl">{goal.emoji || '🎯'}</span>
-                  <div>
-                    <h3 className="font-bold text-gray-800">{goal.name}</h3>
-                    {isParent && <p className="text-sm text-gray-500">{childName}</p>}
-                    {goal.target_date && (
-                      <p className="text-xs text-gray-400">
-                        Target: {new Date(goal.target_date).toLocaleDateString('de-CH')}
-                      </p>
-                    )}
+          activeGoals.forEach((goal) => {
+            const existing = goalsByAccount.get(goal.account_id) || [];
+            existing.push(goal);
+            goalsByAccount.set(goal.account_id, existing);
+          });
+
+          goalsByAccount.forEach((accountGoals, accountId) => {
+            const balance = getAccountBalance(accountId);
+            const allocations = computeGoalAllocations(accountGoals, balance);
+            allocations.forEach((alloc, goalId) => {
+              allocationsByGoalId.set(goalId, alloc);
+            });
+          });
+
+          return activeGoals.map((goal, goalIndex) => {
+            const alloc = allocationsByGoalId.get(goal.id);
+            const allocated = alloc?.allocated ?? 0;
+            const percent = alloc?.percent ?? 0;
+            const remaining = alloc?.remaining ?? goal.target_amount;
+            const childName = getAccountName(goal.account_id);
+            const isMarkAccount = childName === 'Mark';
+
+            return (
+              <div key={goal.id} className="card">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">{goal.emoji || '🎯'}</span>
+                    <div>
+                      <h3 className="font-bold text-gray-800">{goal.name}</h3>
+                      {isParent && <p className="text-sm text-gray-500">{childName}</p>}
+                      {goal.target_date && (
+                        <p className="text-xs text-gray-400">
+                          Target: {new Date(goal.target_date).toLocaleDateString('de-CH')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => handleMoveGoal(goal.id, 'up')}
+                      disabled={goalIndex === 0}
+                      className="text-sm px-2 py-1 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Move up (higher priority)"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      onClick={() => handleMoveGoal(goal.id, 'down')}
+                      disabled={goalIndex === activeGoals.length - 1}
+                      className="text-sm px-2 py-1 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Move down (lower priority)"
+                    >
+                      ▼
+                    </button>
+                    <button
+                      onClick={() => handleToggleComplete(goal)}
+                      className="text-sm px-3 py-1 rounded-lg bg-green-100 text-green-700 hover:bg-green-200"
+                      title="Mark complete"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      onClick={() => handleDelete(goal.id)}
+                      className="text-sm px-3 py-1 rounded-lg bg-red-100 text-red-600 hover:bg-red-200"
+                      title="Delete"
+                    >
+                      ✕
+                    </button>
                   </div>
                 </div>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => handleToggleComplete(goal)}
-                    className="text-sm px-3 py-1 rounded-lg bg-green-100 text-green-700 hover:bg-green-200"
-                    title="Mark complete"
-                  >
-                    ✓
-                  </button>
-                  <button
-                    onClick={() => handleDelete(goal.id)}
-                    className="text-sm px-3 py-1 rounded-lg bg-red-100 text-red-600 hover:bg-red-200"
-                    title="Delete"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
 
-              <div className="mb-2">
-                <div className="flex justify-between text-sm text-gray-500 mb-1">
-                  <span>{formatCHF(balance)}</span>
-                  <span>{formatCHF(goal.target_amount)}</span>
+                <div className="mb-2">
+                  <div className="flex justify-between text-sm text-gray-500 mb-1">
+                    <span>{formatCHF(allocated)}</span>
+                    <span>{formatCHF(goal.target_amount)}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-4">
+                    <div
+                      className={`h-4 rounded-full transition-all ${isMarkAccount ? 'bg-blue-500' : 'bg-purple-500'}`}
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-4">
-                  <div
-                    className={`h-4 rounded-full transition-all ${isMarkAccount ? 'bg-blue-500' : 'bg-purple-500'}`}
-                    style={{ width: `${percent}%` }}
-                  />
-                </div>
-              </div>
 
-              <p className="text-sm text-gray-500">
-                {remaining > 0
-                  ? `${formatCHF(remaining)} more to reach your goal (${percent.toFixed(0)}%)`
-                  : 'Goal reached! 🎉'}
-              </p>
-            </div>
-          );
-        })}
+                <p className="text-sm text-gray-500">
+                  {remaining > 0
+                    ? `${formatCHF(remaining)} more to reach your goal (${percent.toFixed(0)}%)`
+                    : 'Goal reached! 🎉'}
+                </p>
+              </div>
+            );
+          });
+        })()}
       </div>
 
       {/* Completed Goals */}

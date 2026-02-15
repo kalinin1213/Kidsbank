@@ -1,5 +1,7 @@
 'use client';
 
+import { computeGoalAllocations } from '@/lib/goalUtils';
+
 type AccountData = {
   id: string;
   user_id: string;
@@ -27,6 +29,7 @@ type GoalData = {
   target_date: string | null;
   emoji: string | null;
   is_completed: boolean;
+  sort_order?: number;
 };
 
 type View = 'dashboard' | 'history' | 'deposit' | 'withdraw' | 'goals' | 'settings';
@@ -113,46 +116,51 @@ export default function ChildDashboard({
       </div>
 
       {/* Savings Goals */}
-      {activeGoals.length > 0 && (
-        <div className="card">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Savings Goals</h3>
-          <div className="space-y-4">
-            {activeGoals.map((goal) => {
-              const percent = Math.min(100, (account.balance / goal.target_amount) * 100);
-              const remaining = Math.max(0, goal.target_amount - account.balance);
-              return (
-                <div key={goal.id}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-gray-700">
-                      {goal.emoji || '🎯'} {goal.name}
-                    </span>
-                    <span className="text-sm text-gray-500">
-                      {percent.toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-4">
-                    <div
-                      className={`${colors.bg} h-4 rounded-full transition-all flex items-center justify-center`}
-                      style={{ width: `${percent}%` }}
-                    >
-                      {percent >= 20 && (
-                        <span className="text-white text-xs font-bold">
-                          {formatCHF(account.balance)}
-                        </span>
-                      )}
+      {activeGoals.length > 0 && (() => {
+        const allocations = computeGoalAllocations(activeGoals, account.balance);
+        return (
+          <div className="card">
+            <h3 className="text-lg font-bold text-gray-800 mb-4">Savings Goals</h3>
+            <div className="space-y-4">
+              {activeGoals.map((goal) => {
+                const alloc = allocations.get(goal.id);
+                const allocated = alloc?.allocated ?? 0;
+                const percent = alloc?.percent ?? 0;
+                const remaining = alloc?.remaining ?? goal.target_amount;
+                return (
+                  <div key={goal.id}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-gray-700">
+                        {goal.emoji || '🎯'} {goal.name}
+                      </span>
+                      <span className="text-sm text-gray-500">
+                        {percent.toFixed(0)}%
+                      </span>
                     </div>
+                    <div className="w-full bg-gray-200 rounded-full h-4">
+                      <div
+                        className={`${colors.bg} h-4 rounded-full transition-all flex items-center justify-center`}
+                        style={{ width: `${percent}%` }}
+                      >
+                        {percent >= 20 && (
+                          <span className="text-white text-xs font-bold">
+                            {formatCHF(allocated)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {remaining > 0
+                        ? `${formatCHF(remaining)} more to go!`
+                        : 'Goal reached! 🎉'}
+                    </p>
                   </div>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {remaining > 0
-                      ? `${formatCHF(remaining)} more to go!`
-                      : 'Goal reached! 🎉'}
-                  </p>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Recent Transactions */}
       <div className="card">

@@ -27,6 +27,7 @@ type GoalData = {
   target_date: string | null;
   emoji: string | null;
   is_completed: boolean;
+  sort_order?: number;
 };
 
 type View = 'dashboard' | 'history' | 'deposit' | 'withdraw' | 'goals' | 'settings';
@@ -107,7 +108,7 @@ export default function ParentDashboard({
                       {activeGoal.emoji || '🎯'} {activeGoal.name}
                     </span>
                     <span className="text-sm text-gray-500">
-                      {formatCHF(account.balance)} / {formatCHF(activeGoal.target_amount)}
+                      {formatCHF(Math.min(account.balance, activeGoal.target_amount))} / {formatCHF(activeGoal.target_amount)}
                     </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-3">
