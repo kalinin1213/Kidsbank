@@ -170,14 +170,14 @@ export default function TransactionHistory({
         </div>
 
         {/* Date range */}
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-600 mb-1">From</label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="input-field text-sm"
+              className="input-field !px-3 !py-2 !text-sm"
             />
           </div>
           <div className="flex-1">
@@ -186,7 +186,7 @@ export default function TransactionHistory({
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="input-field text-sm"
+              className="input-field !px-3 !py-2 !text-sm"
             />
           </div>
         </div>
