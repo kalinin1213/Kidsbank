@@ -10,7 +10,6 @@ import {
   query,
   where,
   orderBy,
-  limit as firestoreLimit,
   Timestamp,
   runTransaction,
   writeBatch,
@@ -200,27 +199,28 @@ export async function getTransactions(options: {
   endDate?: string;
   maxResults?: number;
 }): Promise<Transaction[]> {
-  let q;
   const constraints = [];
 
   if (options.accountId) {
     constraints.push(where('account_id', '==', options.accountId));
   }
-  if (options.type && options.type !== 'all') {
-    constraints.push(where('type', '==', options.type));
-  }
 
-  constraints.push(orderBy('created_at', 'desc'));
-  constraints.push(firestoreLimit(options.maxResults || 50));
-
-  q = query(collection(db, 'transactions'), ...constraints);
+  // Avoid combining where() with orderBy() on different fields, which
+  // requires a Firestore composite index.  All filtering beyond
+  // account_id, sorting, and limiting are done client-side instead.
+  const q = query(collection(db, 'transactions'), ...constraints);
   const snapshot = await getDocs(q);
 
   let results = snapshot.docs.map(
     (d) => ({ id: d.id, ...d.data() } as Transaction)
   );
 
-  // Client-side date filtering (Firestore can only have inequality on one field)
+  // Client-side type filtering
+  if (options.type && options.type !== 'all') {
+    results = results.filter((t) => t.type === options.type);
+  }
+
+  // Client-side date filtering
   if (options.startDate) {
     results = results.filter((t) => t.created_at >= options.startDate!);
   }
@@ -228,7 +228,12 @@ export async function getTransactions(options: {
     results = results.filter((t) => t.created_at <= options.endDate! + 'T23:59:59');
   }
 
-  return results;
+  // Client-side sorting (newest first)
+  results.sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+  // Client-side limit
+  const maxResults = options.maxResults || 50;
+  return results.slice(0, maxResults);
 }
 
 export async function createTransaction(params: {
