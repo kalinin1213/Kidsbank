@@ -1,20 +1,41 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { getSettings, updatePin, updateAllowance, updateAllowanceDay } from '@/lib/db';
+import { getSettings, getAllUsers, updatePin, updateAllowance, updateAllowanceDay } from '@/lib/db';
+import { uploadAvatar, removeAvatar } from '@/lib/avatarUpload';
+import Avatar from './Avatar';
 
 type ChildData = {
   id: string;
   name: string;
   allowance: number;
+  avatar_url?: string;
+};
+
+type UserData = {
+  id: string;
+  name: string;
+  role: 'parent' | 'child';
+  avatar_url?: string;
 };
 
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const USERS = ['Art', 'Anna', 'Mark', 'Sophie'];
 
+function getUserColor(name: string): string {
+  switch (name) {
+    case 'Art': return 'bg-emerald-500';
+    case 'Anna': return 'bg-teal-500';
+    case 'Mark': return 'bg-blue-500';
+    case 'Sophie': return 'bg-purple-500';
+    default: return 'bg-gray-400';
+  }
+}
+
 export default function Settings({ onBack }: { onBack: () => void }) {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [children, setChildren] = useState<ChildData[]>([]);
+  const [allUsers, setAllUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
 
@@ -23,15 +44,19 @@ export default function Settings({ onBack }: { onBack: () => void }) {
   const [newPin, setNewPin] = useState('');
   const [pinLoading, setPinLoading] = useState(false);
 
+  // Avatar upload state
+  const [avatarUploading, setAvatarUploading] = useState<string | null>(null);
+
   useEffect(() => {
     fetchSettings();
   }, []);
 
   async function fetchSettings() {
     try {
-      const data = await getSettings();
+      const [data, users] = await Promise.all([getSettings(), getAllUsers()]);
       setSettings(data.settings as Record<string, string>);
       setChildren(data.children);
+      setAllUsers(users as UserData[]);
     } catch {
       // Ignore
     } finally {
@@ -81,6 +106,37 @@ export default function Settings({ onBack }: { onBack: () => void }) {
     }
   }
 
+  async function handleAvatarUpload(userName: string, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+
+    setAvatarUploading(userName);
+    try {
+      const url = await uploadAvatar(userName, file);
+      setAllUsers((prev) => prev.map((u) => u.name === userName ? { ...u, avatar_url: url } : u));
+      setChildren((prev) => prev.map((c) => c.name === userName ? { ...c, avatar_url: url } : c));
+      setMessage(`Photo updated for ${userName}`);
+    } catch {
+      setMessage('Failed to upload photo');
+    } finally {
+      setAvatarUploading(null);
+    }
+  }
+
+  async function handleRemoveAvatar(userName: string) {
+    setAvatarUploading(userName);
+    try {
+      await removeAvatar(userName);
+      setAllUsers((prev) => prev.map((u) => u.name === userName ? { ...u, avatar_url: undefined } : u));
+      setChildren((prev) => prev.map((c) => c.name === userName ? { ...c, avatar_url: undefined } : c));
+      setMessage(`Photo removed for ${userName}`);
+    } catch {
+      setMessage('Failed to remove photo');
+    } finally {
+      setAvatarUploading(null);
+    }
+  }
+
   if (loading) {
     return <div className="text-center py-8 text-gray-400">Loading settings...</div>;
   }
@@ -92,13 +148,47 @@ export default function Settings({ onBack }: { onBack: () => void }) {
       {message && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl p-3 text-center text-sm font-medium">
           {message}
-          <button onClick={() => setMessage('')} className="ml-2 text-emerald-500">✕</button>
+          <button onClick={() => setMessage('')} className="ml-2 text-emerald-500">{'\u2715'}</button>
         </div>
       )}
 
+      {/* Family Photos */}
+      <div className="card">
+        <h3 className="text-lg font-bold text-gray-800 mb-4">Family Photos</h3>
+        <div className="grid grid-cols-2 gap-4">
+          {allUsers.map((u) => (
+            <div key={u.name} className="flex flex-col items-center gap-2">
+              <Avatar name={u.name} avatarUrl={u.avatar_url} size="lg" colorClass={getUserColor(u.name)} />
+              <span className="text-sm font-medium text-gray-700">{u.name}</span>
+              <div className="flex gap-2">
+                <label className={`text-xs text-emerald-600 cursor-pointer hover:underline ${avatarUploading === u.name ? 'opacity-50 pointer-events-none' : ''}`}>
+                  {avatarUploading === u.name ? 'Uploading...' : 'Change photo'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleAvatarUpload(u.name, e)}
+                    disabled={avatarUploading === u.name}
+                  />
+                </label>
+                {u.avatar_url && (
+                  <button
+                    onClick={() => handleRemoveAvatar(u.name)}
+                    disabled={avatarUploading === u.name}
+                    className="text-xs text-red-400 hover:underline disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* PIN Management */}
       <div className="card">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">🔐 Change PINs</h3>
+        <h3 className="text-lg font-bold text-gray-800 mb-4">Change PINs</h3>
 
         <div className="space-y-4">
           <div>
@@ -144,16 +234,17 @@ export default function Settings({ onBack }: { onBack: () => void }) {
 
       {/* Allowance Settings */}
       <div className="card">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">💰 Weekly Allowance</h3>
+        <h3 className="text-lg font-bold text-gray-800 mb-4">Weekly Allowance</h3>
 
         <div className="space-y-4">
           {children.map((child) => (
             <div key={child.id} className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
-                child.name === 'Mark' ? 'bg-blue-500' : 'bg-purple-500'
-              }`}>
-                {child.name[0]}
-              </div>
+              <Avatar
+                name={child.name}
+                avatarUrl={child.avatar_url}
+                size="sm"
+                colorClass={child.name === 'Mark' ? 'bg-blue-500' : 'bg-purple-500'}
+              />
               <span className="font-medium text-gray-700 w-16">{child.name}</span>
               <div className="flex items-center gap-2 flex-1">
                 <input
@@ -177,7 +268,7 @@ export default function Settings({ onBack }: { onBack: () => void }) {
 
       {/* Allowance Day */}
       <div className="card">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">📅 Allowance Day</h3>
+        <h3 className="text-lg font-bold text-gray-800 mb-4">Allowance Day</h3>
         <div className="flex flex-wrap gap-2">
           {DAYS.map((day) => (
             <button

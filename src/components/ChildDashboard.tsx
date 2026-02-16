@@ -32,7 +32,7 @@ type GoalData = {
   sort_order?: number;
 };
 
-type View = 'dashboard' | 'history' | 'deposit' | 'withdraw' | 'goals' | 'settings';
+type View = 'dashboard' | 'history' | 'deposit' | 'withdraw' | 'goals' | 'settings' | 'child-settings';
 
 function formatCHF(amount: number): string {
   return `${amount.toFixed(2)} CHF`;
@@ -112,6 +112,13 @@ export default function ChildDashboard({
         >
           <span className="text-2xl block mb-1">📋</span>
           <span className="text-sm font-semibold text-gray-700">History</span>
+        </button>
+        <button
+          onClick={() => onAction('child-settings')}
+          className="flex-1 bg-white rounded-2xl p-4 shadow-md hover:shadow-lg transition-shadow text-center"
+        >
+          <span className="text-2xl block mb-1">&#9881;&#65039;</span>
+          <span className="text-sm font-semibold text-gray-700">Settings</span>
         </button>
       </div>
 

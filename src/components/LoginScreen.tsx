@@ -1,22 +1,50 @@
 'use client';
 
-import { useState } from 'react';
-import { loginUser } from '@/lib/db';
+import { useState, useEffect } from 'react';
+import { loginUser, getAllUsers } from '@/lib/db';
+import Avatar from './Avatar';
 
-type User = { userId: string; name: string; role: 'parent' | 'child' };
+type User = { userId: string; name: string; role: 'parent' | 'child'; avatarUrl?: string };
 
-const USERS = [
-  { name: 'Art', emoji: '👨', color: 'bg-emerald-500 hover:bg-emerald-600', role: 'parent' },
-  { name: 'Anna', emoji: '👩', color: 'bg-teal-500 hover:bg-teal-600', role: 'parent' },
-  { name: 'Mark', emoji: '👦', color: 'bg-blue-500 hover:bg-blue-600', role: 'child' },
-  { name: 'Sophie', emoji: '👧', color: 'bg-purple-500 hover:bg-purple-600', role: 'child' },
-];
+const USER_META: Record<string, { emoji: string; color: string; role: string }> = {
+  Art:    { emoji: '\u{1F468}', color: 'bg-emerald-500 hover:bg-emerald-600', role: 'parent' },
+  Anna:   { emoji: '\u{1F469}', color: 'bg-teal-500 hover:bg-teal-600', role: 'parent' },
+  Mark:   { emoji: '\u{1F466}', color: 'bg-blue-500 hover:bg-blue-600', role: 'child' },
+  Sophie: { emoji: '\u{1F467}', color: 'bg-purple-500 hover:bg-purple-600', role: 'child' },
+};
+
+type UserDisplay = {
+  name: string;
+  emoji: string;
+  color: string;
+  role: string;
+  avatarUrl?: string;
+};
+
+const DEFAULT_USERS: UserDisplay[] = Object.entries(USER_META).map(([name, meta]) => ({
+  name,
+  ...meta,
+}));
 
 export default function LoginScreen({ onLogin }: { onLogin: (user: User) => void }) {
+  const [users, setUsers] = useState<UserDisplay[]>(DEFAULT_USERS);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    getAllUsers()
+      .then((dbUsers) => {
+        setUsers((prev) =>
+          prev.map((u) => {
+            const dbUser = dbUsers.find((d) => d.name === u.name);
+            return dbUser?.avatar_url ? { ...u, avatarUrl: dbUser.avatar_url } : u;
+          })
+        );
+      })
+      .catch(() => {});
+  }, []);
 
   async function attemptLogin(name: string, pinValue: string) {
     setLoading(true);
@@ -24,7 +52,7 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: User) => void
     try {
       const user = await loginUser(name, pinValue);
       if (user) {
-        onLogin({ userId: user.id, name: user.name, role: user.role });
+        onLogin({ userId: user.id, name: user.name, role: user.role, avatarUrl: user.avatar_url });
       } else {
         setError('Wrong PIN');
         setPin('');
@@ -58,13 +86,19 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: User) => void
         <h1 className="text-4xl font-bold text-emerald-700 mb-2">Kids Bank</h1>
         <p className="text-gray-500 mb-10 text-lg">Who are you?</p>
         <div className="grid grid-cols-2 gap-4 w-full max-w-sm">
-          {USERS.map((u) => (
+          {users.map((u) => (
             <button
               key={u.name}
               onClick={() => setSelectedUser(u.name)}
               className={`${u.color} text-white rounded-3xl p-6 flex flex-col items-center gap-2 transition-all transform hover:scale-105 active:scale-95 shadow-lg`}
             >
-              <span className="text-5xl">{u.emoji}</span>
+              <Avatar
+                name={u.name}
+                avatarUrl={u.avatarUrl}
+                emoji={u.emoji}
+                size="xl"
+                colorClass={u.color.split(' ')[0]}
+              />
               <span className="text-xl font-bold">{u.name}</span>
               <span className="text-xs opacity-80">{u.role}</span>
             </button>
@@ -74,7 +108,7 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: User) => void
     );
   }
 
-  const selectedUserData = USERS.find((u) => u.name === selectedUser)!;
+  const selectedUserData = users.find((u) => u.name === selectedUser)!;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-blue-50 flex flex-col items-center justify-center p-4">
@@ -85,7 +119,15 @@ export default function LoginScreen({ onLogin }: { onLogin: (user: User) => void
         &larr; Back
       </button>
 
-      <div className="text-6xl mb-4">{selectedUserData.emoji}</div>
+      <div className="mb-4">
+        <Avatar
+          name={selectedUserData.name}
+          avatarUrl={selectedUserData.avatarUrl}
+          emoji={selectedUserData.emoji}
+          size="xl"
+          colorClass={selectedUserData.color.split(' ')[0]}
+        />
+      </div>
       <h2 className="text-2xl font-bold text-gray-700 mb-8">Enter PIN for {selectedUser}</h2>
 
       <div className="flex gap-4 mb-6">

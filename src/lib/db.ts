@@ -24,6 +24,7 @@ export type User = {
   role: 'parent' | 'child';
   pin_hash: string;
   allowance: number;
+  avatar_url?: string;
 };
 
 export type Account = {
@@ -172,7 +173,36 @@ export async function loginUser(
     role: userData.role,
     pin_hash: userData.pin_hash,
     allowance: userData.allowance,
+    avatar_url: userData.avatar_url || undefined,
   };
+}
+
+export async function getUser(userName: string): Promise<User | null> {
+  const userDoc = await getDoc(doc(db, 'users', userName.toLowerCase()));
+  if (!userDoc.exists()) return null;
+  const data = userDoc.data();
+  return {
+    id: userDoc.id,
+    name: data.name,
+    role: data.role,
+    pin_hash: data.pin_hash,
+    allowance: data.allowance,
+    avatar_url: data.avatar_url || undefined,
+  };
+}
+
+export async function getAllUsers(): Promise<Pick<User, 'id' | 'name' | 'role' | 'avatar_url'>[]> {
+  const snapshot = await getDocs(collection(db, 'users'));
+  return snapshot.docs.map((d) => ({
+    id: d.id,
+    name: d.data().name,
+    role: d.data().role,
+    avatar_url: d.data().avatar_url || undefined,
+  }));
+}
+
+export async function updateAvatarUrl(userName: string, avatarUrl: string): Promise<void> {
+  await updateDoc(doc(db, 'users', userName.toLowerCase()), { avatar_url: avatarUrl });
 }
 
 // ---- Accounts ----
@@ -366,7 +396,7 @@ export async function reorderGoals(goalIds: string[]): Promise<void> {
 
 export async function getSettings(): Promise<{
   settings: Record<string, string | boolean>;
-  children: { id: string; name: string; allowance: number }[];
+  children: { id: string; name: string; allowance: number; avatar_url?: string }[];
 }> {
   const settingsDoc = await getDoc(doc(db, 'settings', 'app'));
   const settings = settingsDoc.exists() ? settingsDoc.data() : {};
@@ -378,6 +408,7 @@ export async function getSettings(): Promise<{
     id: d.id,
     name: d.data().name,
     allowance: d.data().allowance,
+    avatar_url: d.data().avatar_url || undefined,
   }));
 
   return { settings, children };
