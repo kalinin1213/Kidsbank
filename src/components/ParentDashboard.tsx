@@ -1,11 +1,14 @@
 'use client';
 
+import Avatar from './Avatar';
+
 type AccountData = {
   id: string;
   user_id: string;
   name: string;
   balance: number;
   allowance: number;
+  avatar_url?: string;
 };
 
 type TransactionData = {
@@ -84,9 +87,7 @@ export default function ParentDashboard({
               {/* Header */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className={`w-12 h-12 ${colors.bg} rounded-full flex items-center justify-center text-white text-xl font-bold`}>
-                    {account.name[0]}
-                  </div>
+                  <Avatar name={account.name} avatarUrl={account.avatar_url} size="md" colorClass={colors.bg} />
                   <div>
                     <h3 className="text-lg font-bold text-gray-800">{account.name}</h3>
                     <p className="text-sm text-gray-500">Allowance: {formatCHF(account.allowance)}/week</p>

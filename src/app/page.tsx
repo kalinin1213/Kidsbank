@@ -10,6 +10,7 @@ type User = {
   userId: string;
   name: string;
   role: 'parent' | 'child';
+  avatarUrl?: string;
 };
 
 export default function Home() {

@@ -4,12 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { getAccounts, getTransactions, getGoals, getSettings, type Account, type Transaction, type SavingsGoal } from '@/lib/db';
 import ParentDashboard from './ParentDashboard';
 import ChildDashboard from './ChildDashboard';
+import ChildSettings from './ChildSettings';
 import TransactionHistory from './TransactionHistory';
 import TransactionForm from './TransactionForm';
 import SavingsGoals from './SavingsGoals';
 import Settings from './Settings';
 
-type User = { userId: string; name: string; role: 'parent' | 'child' };
+type User = { userId: string; name: string; role: 'parent' | 'child'; avatarUrl?: string };
 
 type AccountData = {
   id: string;
@@ -18,6 +19,7 @@ type AccountData = {
   balance: number;
   allowance: number;
   user_name: string;
+  avatar_url?: string;
 };
 
 type TransactionData = {
@@ -42,7 +44,7 @@ type GoalData = {
   sort_order?: number;
 };
 
-type View = 'dashboard' | 'history' | 'deposit' | 'withdraw' | 'goals' | 'settings';
+type View = 'dashboard' | 'history' | 'deposit' | 'withdraw' | 'goals' | 'settings' | 'child-settings';
 
 export default function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [view, setView] = useState<View>('dashboard');
@@ -51,6 +53,7 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
   const [goals, setGoals] = useState<GoalData[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userAvatarUrl, setUserAvatarUrl] = useState<string | undefined>(user.avatarUrl);
 
   const fetchData = useCallback(async () => {
     try {
@@ -63,7 +66,7 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
       const { children } = await getSettings();
       const accountsWithAllowance = accs.map((a) => {
         const child = children.find((c) => c.id === a.user_id);
-        return { ...a, name: a.user_name, allowance: child?.allowance || 0 };
+        return { ...a, name: a.user_name, allowance: child?.allowance || 0, avatar_url: child?.avatar_url };
       });
 
       setAccounts(accountsWithAllowance);
@@ -123,9 +126,9 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
           </h1>
         </div>
         <div className="flex items-center gap-3">
-          {user.role === 'parent' && view === 'dashboard' && (
+          {view === 'dashboard' && (
             <button
-              onClick={() => setView('settings')}
+              onClick={() => setView(user.role === 'parent' ? 'settings' : 'child-settings')}
               className="text-gray-500 hover:text-gray-700"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -207,6 +210,18 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
         )}
         {view === 'settings' && (
           <Settings onBack={handleBack} />
+        )}
+        {view === 'child-settings' && (
+          <ChildSettings
+            userName={user.name}
+            avatarUrl={userAvatarUrl}
+            onAvatarChange={(url) => {
+              setUserAvatarUrl(url || undefined);
+              const session = JSON.parse(localStorage.getItem('kidsbank_session') || '{}');
+              session.avatarUrl = url || undefined;
+              localStorage.setItem('kidsbank_session', JSON.stringify(session));
+            }}
+          />
         )}
       </div>
     </div>
