@@ -170,7 +170,7 @@ export default function TransactionHistory({
         </div>
 
         {/* Date range */}
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col sm:flex-row gap-3 sm:max-w-sm">
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-600 mb-1">From</label>
             <input

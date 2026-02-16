@@ -213,7 +213,7 @@ export default function SavingsGoals({
           </div>
 
           {/* Target date */}
-          <div>
+          <div className="max-w-xs">
             <label className="block text-sm font-medium text-gray-600 mb-2">Target Date (optional)</label>
             <input
               type="date"

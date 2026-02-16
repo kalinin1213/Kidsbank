@@ -146,7 +146,7 @@ export default function TransactionForm({
               required
             />
           </div>
-          <div className="flex-1">
+          <div className="w-40 shrink-0">
             <label className="block text-sm font-medium text-gray-600 mb-2">Date</label>
             <input
               type="date"
