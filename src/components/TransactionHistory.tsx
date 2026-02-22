@@ -170,8 +170,8 @@ export default function TransactionHistory({
         </div>
 
         {/* Date range */}
-        <div className="flex flex-col sm:flex-row gap-3 sm:max-w-sm">
-          <div className="flex-1">
+        <div className="flex flex-row flex-wrap gap-3">
+          <div className="w-40 shrink-0">
             <label className="block text-sm font-medium text-gray-600 mb-1">From</label>
             <input
               type="date"
@@ -180,7 +180,7 @@ export default function TransactionHistory({
               className="input-field !px-3 !py-2 !text-sm"
             />
           </div>
-          <div className="flex-1">
+          <div className="w-40 shrink-0">
             <label className="block text-sm font-medium text-gray-600 mb-1">To</label>
             <input
               type="date"
