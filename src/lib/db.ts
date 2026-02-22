@@ -451,7 +451,7 @@ export async function processAllowances(): Promise<{ processed: number }> {
   let checkDate: Date;
 
   if (lastAllowanceDateStr) {
-    const lastDate = new Date(lastAllowanceDateStr);
+    const lastDate = new Date(lastAllowanceDateStr + 'T00:00:00');
     checkDate = new Date(lastDate);
     checkDate.setDate(checkDate.getDate() + 1);
   } else {
@@ -476,7 +476,7 @@ export async function processAllowances(): Promise<{ processed: number }> {
   let processed = 0;
 
   for (const date of missedDates) {
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
     for (const userDoc of usersSnapshot.docs) {
       const user = userDoc.data();
