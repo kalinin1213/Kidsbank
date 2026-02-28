@@ -187,6 +187,7 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
             accounts={accounts}
             selectedAccountId={selectedAccountId}
             userName={user.name}
+            userRole={user.role}
             onComplete={handleBack}
           />
         )}
@@ -196,6 +197,7 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
             accounts={accounts}
             selectedAccountId={selectedAccountId || (childAccount?.id ?? null)}
             userName={user.name}
+            userRole={user.role}
             onComplete={handleBack}
           />
         )}
