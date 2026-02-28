@@ -16,12 +16,14 @@ export default function TransactionForm({
   accounts,
   selectedAccountId,
   userName,
+  userRole,
   onComplete,
 }: {
   type: 'deposit' | 'withdrawal';
   accounts: AccountData[];
   selectedAccountId: string | null;
   userName: string;
+  userRole: 'parent' | 'child';
   onComplete: () => void;
 }) {
   const [accountId, setAccountId] = useState<string>(selectedAccountId || accounts[0]?.id || '');
@@ -50,7 +52,7 @@ export default function TransactionForm({
       return;
     }
 
-    if (!isDeposit && selectedAccount && parsedAmount > selectedAccount.balance) {
+    if (!isDeposit && userRole === 'child' && selectedAccount && parsedAmount > selectedAccount.balance) {
       setError(`Not enough money! Balance is ${selectedAccount.balance.toFixed(2)} CHF`);
       return;
     }
@@ -64,6 +66,7 @@ export default function TransactionForm({
         amount: parsedAmount,
         comment: comment.trim(),
         performedBy: userName,
+        performedByRole: userRole,
         date: date || undefined,
       });
       setSuccess(true);

@@ -273,6 +273,7 @@ export async function createTransaction(params: {
   amount: number;
   comment: string;
   performedBy: string;
+  performedByRole: 'parent' | 'child';
   date?: string;
 }): Promise<{ balance: number }> {
   const accountRef = doc(db, 'accounts', params.accountId);
@@ -286,7 +287,8 @@ export async function createTransaction(params: {
       params.type === 'withdrawal' ? -params.amount : params.amount;
     const balance = Math.round((account.balance + txnAmount) * 100) / 100;
 
-    if (balance < 0) throw new Error('Insufficient balance');
+    if (balance < 0 && params.performedByRole === 'child')
+      throw new Error('Insufficient balance');
 
     const createdAt = params.date
       ? new Date(params.date).toISOString()
