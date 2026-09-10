@@ -10,6 +10,7 @@ import {
   query,
   where,
   orderBy,
+  onSnapshot,
   Timestamp,
   runTransaction,
   writeBatch,
@@ -219,6 +220,79 @@ export async function getAccounts(
     if (!accountDoc.exists()) return [];
     return [{ id: accountDoc.id, ...accountDoc.data() } as Account];
   }
+}
+
+// ---- Live subscriptions ----
+//
+// Firestore listeners deliver whatever is in the offline cache immediately and
+// then push the server copy as soon as it arrives.  Screens that subscribe show
+// data on the first frame instead of blocking on a network round trip, and they
+// pick up writes made elsewhere (allowance processing, another device) without
+// having to be navigated away from and back to.
+
+export type SnapshotMeta = { fromCache: boolean };
+
+export function subscribeToAccounts(
+  userRole: string,
+  userId: string,
+  onData: (accounts: Account[], meta: SnapshotMeta) => void,
+  onError?: (error: Error) => void
+): () => void {
+  if (userRole === 'parent') {
+    return onSnapshot(
+      collection(db, 'accounts'),
+      (snapshot) =>
+        onData(
+          snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Account)),
+          { fromCache: snapshot.metadata.fromCache }
+        ),
+      (error) => onError?.(error)
+    );
+  }
+
+  return onSnapshot(
+    doc(db, 'accounts', userId),
+    (snapshot) =>
+      onData(
+        snapshot.exists() ? [{ id: snapshot.id, ...snapshot.data() } as Account] : [],
+        { fromCache: snapshot.metadata.fromCache }
+      ),
+    (error) => onError?.(error)
+  );
+}
+
+export function subscribeToChildren(
+  onData: (children: { id: string; name: string; allowance: number; avatar_url?: string }[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    query(collection(db, 'users'), where('role', '==', 'child')),
+    (snapshot) =>
+      onData(
+        snapshot.docs.map((d) => ({
+          id: d.id,
+          name: d.data().name,
+          allowance: d.data().allowance,
+          avatar_url: d.data().avatar_url || undefined,
+        }))
+      ),
+    (error) => onError?.(error)
+  );
+}
+
+export function subscribeToGoals(
+  onData: (goals: SavingsGoal[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    collection(db, 'goals'),
+    (snapshot) => {
+      const goals = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as SavingsGoal));
+      goals.sort((a, b) => (a.sort_order ?? Infinity) - (b.sort_order ?? Infinity));
+      onData(goals);
+    },
+    (error) => onError?.(error)
+  );
 }
 
 // ---- Transactions ----
@@ -435,8 +509,28 @@ const DAYS_OF_WEEK = [
   'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
 ];
 
-export async function processAllowances(): Promise<{ processed: number }> {
-  const settingsDoc = await getDoc(doc(db, 'settings', 'app'));
+let inFlightAllowanceRun: Promise<{ processed: number }> | null = null;
+
+/**
+ * Credits every allowance day that has passed since `last_allowance_date`.
+ *
+ * Safe to call from several places at once: concurrent calls in this tab share
+ * one run, and each day is committed inside a Firestore transaction that
+ * re-checks `last_allowance_date`, so another device (or a second tab) racing
+ * on the same day loses the write instead of paying the allowance twice.
+ */
+export function processAllowances(): Promise<{ processed: number }> {
+  if (!inFlightAllowanceRun) {
+    inFlightAllowanceRun = runAllowances().finally(() => {
+      inFlightAllowanceRun = null;
+    });
+  }
+  return inFlightAllowanceRun;
+}
+
+async function runAllowances(): Promise<{ processed: number }> {
+  const settingsRef = doc(db, 'settings', 'app');
+  const settingsDoc = await getDoc(settingsRef);
   if (!settingsDoc.exists()) return { processed: 0 };
 
   const settings = settingsDoc.data();
@@ -475,44 +569,58 @@ export async function processAllowances(): Promise<{ processed: number }> {
     query(collection(db, 'users'), where('role', '==', 'child'))
   );
 
+  const children = usersSnapshot.docs
+    .map((d) => ({ id: d.id, allowance: Number(d.data().allowance) || 0 }))
+    .filter((c) => c.allowance > 0);
+
+  if (children.length === 0) return { processed: 0 };
+
   let processed = 0;
 
   for (const date of missedDates) {
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
-    for (const userDoc of usersSnapshot.docs) {
-      const user = userDoc.data();
-      if (user.allowance <= 0) continue;
+    const credited = await runTransaction(db, async (transaction) => {
+      // Re-read the marker inside the transaction: if another client already
+      // paid this day, the transaction aborts instead of paying it again.
+      const currentSettings = await transaction.get(settingsRef);
+      const lastPaid = currentSettings.data()?.last_allowance_date || '';
+      if (lastPaid >= dateStr) return 0;
 
-      const accountRef = doc(db, 'accounts', userDoc.id);
+      const accountSnaps = await Promise.all(
+        children.map((child) => transaction.get(doc(db, 'accounts', child.id)))
+      );
 
-      await runTransaction(db, async (transaction) => {
-        const accountDoc = await transaction.get(accountRef);
+      let count = 0;
+      accountSnaps.forEach((accountDoc, i) => {
         if (!accountDoc.exists()) return;
 
-        const account = accountDoc.data();
-        const newBalance = Math.round((account.balance + user.allowance) * 100) / 100;
+        const child = children[i];
+        const newBalance =
+          Math.round((accountDoc.data().balance + child.allowance) * 100) / 100;
 
-        transaction.update(accountRef, { balance: newBalance });
+        transaction.update(accountDoc.ref, { balance: newBalance });
 
         const txnRef = doc(collection(db, 'transactions'));
         transaction.set(txnRef, {
-          account_id: userDoc.id,
+          account_id: child.id,
           type: 'allowance',
-          amount: user.allowance,
+          amount: child.allowance,
           balance_after: newBalance,
           comment: 'Weekly allowance',
           performed_by: 'System',
           created_at: dateStr + 'T00:01:00.000Z',
         });
+
+        count++;
       });
 
-      processed++;
-    }
+      transaction.update(settingsRef, { last_allowance_date: dateStr });
 
-    await updateDoc(doc(db, 'settings', 'app'), {
-      last_allowance_date: dateStr,
+      return count;
     });
+
+    processed += credited;
   }
 
   return { processed };

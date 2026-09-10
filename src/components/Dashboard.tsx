@@ -1,7 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { getAccounts, getTransactions, getGoals, getSettings, type Account, type Transaction, type SavingsGoal } from '@/lib/db';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import {
+  getTransactions,
+  subscribeToAccounts,
+  subscribeToChildren,
+  subscribeToGoals,
+} from '@/lib/db';
 import ParentDashboard from './ParentDashboard';
 import ChildDashboard from './ChildDashboard';
 import ChildSettings from './ChildSettings';
@@ -44,50 +49,135 @@ type GoalData = {
   sort_order?: number;
 };
 
+type RawAccount = {
+  id: string;
+  user_id: string;
+  user_name: string;
+  balance: number;
+};
+
+type ChildInfo = {
+  id: string;
+  name: string;
+  allowance: number;
+  avatar_url?: string;
+};
+
 type View = 'dashboard' | 'history' | 'deposit' | 'withdraw' | 'goals' | 'settings' | 'child-settings';
+
+// How long to sit on the loading screen before showing the connection notice.
+// The offline cache normally answers in the first frame, so anything past this
+// means we are waiting on the network.
+const SLOW_CONNECTION_MS = 6000;
 
 export default function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [view, setView] = useState<View>('dashboard');
-  const [accounts, setAccounts] = useState<AccountData[]>([]);
+  const [rawAccounts, setRawAccounts] = useState<RawAccount[] | null>(null);
+  const [children, setChildren] = useState<ChildInfo[]>([]);
   const [transactions, setTransactions] = useState<Record<string, TransactionData[]>>({});
   const [goals, setGoals] = useState<GoalData[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [slowConnection, setSlowConnection] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [userAvatarUrl, setUserAvatarUrl] = useState<string | undefined>(user.avatarUrl);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const hasDataRef = useRef(false);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const [accs, allGoals] = await Promise.all([
-        getAccounts(user.role, user.userId),
-        getGoals(),
-      ]);
+  // Live data. Listeners replay the offline cache immediately and then keep the
+  // screen in sync with the server, so balances update on their own once the
+  // allowance run (or another device) writes.
+  useEffect(() => {
+    const unsubscribes = [
+      subscribeToAccounts(
+        user.role,
+        user.userId,
+        (accs, meta) => {
+          setError(null);
+          // A cold cache answers an offline query with an empty snapshot; that
+          // is "nothing stored yet", not "no accounts", so keep waiting for the
+          // server rather than flashing an empty dashboard.
+          if (accs.length === 0 && meta.fromCache && !hasDataRef.current) return;
+          hasDataRef.current = true;
+          setRawAccounts(accs);
+        },
+        () => setError('Could not reach the bank. Check your connection.')
+      ),
+      subscribeToChildren(setChildren),
+      subscribeToGoals((g) => setGoals(g as GoalData[])),
+    ];
 
-      // Get allowance from settings
-      const { children } = await getSettings();
-      const accountsWithAllowance = accs.map((a) => {
-        const child = children.find((c) => c.id === a.user_id);
-        return { ...a, name: a.user_name, allowance: child?.allowance || 0, avatar_url: child?.avatar_url };
-      });
-
-      setAccounts(accountsWithAllowance);
-      setGoals(allGoals);
-
-      // Fetch recent transactions for each account
-      const txnMap: Record<string, TransactionData[]> = {};
-      for (const acc of accs) {
-        txnMap[acc.id] = await getTransactions({ accountId: acc.id, maxResults: 5 });
-      }
-      setTransactions(txnMap);
-    } catch {
-      // Ignore
-    } finally {
-      setLoading(false);
-    }
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
   }, [user.role, user.userId]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    const timer = setTimeout(() => setSlowConnection(true), SLOW_CONNECTION_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const accounts = useMemo(
+    () =>
+      (rawAccounts ?? []).map((a) => {
+        const child = children.find((c) => c.id === a.user_id);
+        return {
+          ...a,
+          name: a.user_name,
+          allowance: child?.allowance || 0,
+          avatar_url: child?.avatar_url,
+        };
+      }),
+    [rawAccounts, children]
+  );
+
+  // Refetch the recent-activity lists whenever a balance moves (a balance change
+  // always means a new transaction) or a screen asks for a refresh.
+  const accountIdsKey = (rawAccounts ?? []).map((a) => a.id).join(',');
+  const balancesKey = (rawAccounts ?? []).map((a) => a.balance).join(',');
+
+  useEffect(() => {
+    const ids = accountIdsKey ? accountIdsKey.split(',') : [];
+    if (ids.length === 0) return;
+
+    let cancelled = false;
+
+    // Fetch every account in parallel — serial round trips were the bulk of the
+    // wait on a slow connection.
+    Promise.all(
+      ids.map(async (id) => [id, await getTransactions({ accountId: id, maxResults: 5 })] as const)
+    )
+      .then((entries) => {
+        if (!cancelled) setTransactions(Object.fromEntries(entries));
+      })
+      .catch(() => {
+        // Keep whatever we already have on screen.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accountIdsKey, balancesKey, refreshToken]);
+
+  const refresh = useCallback(() => setRefreshToken((t) => t + 1), []);
+
+  if (rawAccounts === null) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gray-50 px-6 text-center">
+        <div className="text-xl text-gray-400 animate-pulse">Loading...</div>
+        {(slowConnection || error) && (
+          <>
+            <p className="text-sm text-gray-500 max-w-xs">
+              {error ?? 'This is taking longer than usual — the connection looks slow.'}
+            </p>
+            <button onClick={() => window.location.reload()} className="btn-primary">
+              Retry
+            </button>
+            <button onClick={onLogout} className="text-sm text-gray-400 hover:text-red-500">
+              Log out
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
 
   function handleAction(action: View, accountId?: string) {
     if (accountId) setSelectedAccountId(accountId);
@@ -97,15 +187,7 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
   function handleBack() {
     setView('dashboard');
     setSelectedAccountId(null);
-    fetchData();
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-xl text-gray-400 animate-pulse">Loading...</div>
-      </div>
-    );
+    refresh();
   }
 
   // Header
@@ -165,6 +247,11 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
             onAction={handleAction}
           />
         )}
+        {view === 'dashboard' && user.role === 'child' && !childAccount && (
+          <div className="text-center py-12 text-gray-500">
+            No account found for {user.name}. Ask a parent to check the setup.
+          </div>
+        )}
         {view === 'dashboard' && user.role === 'child' && childAccount && (
           <ChildDashboard
             account={childAccount}
@@ -207,7 +294,7 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
             goals={goals}
             selectedAccountId={selectedAccountId || (childAccount?.id ?? null)}
             isParent={user.role === 'parent'}
-            onUpdate={fetchData}
+            onUpdate={refresh}
           />
         )}
         {view === 'settings' && (
