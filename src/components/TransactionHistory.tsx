@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { getTransactions as fetchTxns } from '@/lib/db';
+import { useState, useEffect, useMemo } from 'react';
+import { subscribeToTransactions, filterTransactions } from '@/lib/db';
 
 type AccountData = {
   id: string;
@@ -21,6 +21,8 @@ type TransactionData = {
   performed_by: string;
   created_at: string;
 };
+
+const SLOW_CONNECTION_MS = 6000;
 
 function formatCHF(amount: number): string {
   return `${amount.toFixed(2)} CHF`;
@@ -73,34 +75,54 @@ export default function TransactionHistory({
   selectedAccountId: string | null;
   isParent: boolean;
 }) {
-  const [transactions, setTransactions] = useState<TransactionData[]>([]);
+  const [allTransactions, setAllTransactions] = useState<TransactionData[] | null>(null);
   const [accountId, setAccountId] = useState<string | null>(selectedAccountId);
   const [typeFilter, setTypeFilter] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [slowConnection, setSlowConnection] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchTransactions = useCallback(async () => {
-    setLoading(true);
-    try {
-      const results = await fetchTxns({
-        accountId: accountId || undefined,
-        type: typeFilter !== 'all' ? typeFilter : undefined,
+  // Listen rather than fetch: the listener answers from the offline cache right
+  // away and keeps the list in sync, where a one-shot fetch could wait forever
+  // on a stalled connection and leave the screen stuck on "Loading...".
+  useEffect(() => {
+    setAllTransactions(null);
+    setError(null);
+    setSlowConnection(false);
+    let hasData = false;
+
+    const timer = setTimeout(() => setSlowConnection(true), SLOW_CONNECTION_MS);
+    const unsubscribe = subscribeToTransactions(
+      accountId || undefined,
+      (txns, meta) => {
+        setError(null);
+        // An empty answer from a cold cache means "nothing stored yet", not
+        // "no transactions" — keep waiting for the server.
+        if (txns.length === 0 && meta.fromCache && !hasData) return;
+        hasData = true;
+        setAllTransactions(txns);
+      },
+      () => setError('Could not load the history. Check your connection.')
+    );
+
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [accountId]);
+
+  const transactions = useMemo(
+    () =>
+      allTransactions &&
+      filterTransactions(allTransactions, {
+        type: typeFilter,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
         maxResults: 100,
-      });
-      setTransactions(results);
-    } catch {
-      // Ignore
-    } finally {
-      setLoading(false);
-    }
-  }, [accountId, typeFilter, startDate, endDate]);
-
-  useEffect(() => {
-    fetchTransactions();
-  }, [fetchTransactions]);
+      }),
+    [allTransactions, typeFilter, startDate, endDate]
+  );
 
   const getAccountName = (accId: string) => {
     return accounts.find((a) => a.id === accId)?.name || 'Unknown';
@@ -194,8 +216,15 @@ export default function TransactionHistory({
 
       {/* Transaction list */}
       <div className="space-y-3">
-        {loading ? (
-          <div className="text-center py-8 text-gray-400">Loading...</div>
+        {transactions === null ? (
+          <div className="text-center py-8 text-gray-400">
+            <p>Loading...</p>
+            {(slowConnection || error) && (
+              <p className="text-sm text-gray-500 mt-2">
+                {error ?? 'This is taking longer than usual — the connection looks slow.'}
+              </p>
+            )}
+          </div>
         ) : transactions.length === 0 ? (
           <div className="card text-center py-8">
             <p className="text-gray-400">No transactions found</p>

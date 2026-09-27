@@ -297,35 +297,31 @@ export function subscribeToGoals(
 
 // ---- Transactions ----
 
-export async function getTransactions(options: {
+export type TransactionFilters = {
   accountId?: string;
   type?: string;
   startDate?: string;
   endDate?: string;
   maxResults?: number;
-}): Promise<Transaction[]> {
-  const constraints = [];
+};
 
-  if (options.accountId) {
-    constraints.push(where('account_id', '==', options.accountId));
-  }
-
+function transactionsQuery(accountId?: string) {
   // Avoid combining where() with orderBy() on different fields, which
   // requires a Firestore composite index.  All filtering beyond
   // account_id, sorting, and limiting are done client-side instead.
-  const q = query(collection(db, 'transactions'), ...constraints);
-  const snapshot = await getDocs(q);
+  const constraints = accountId ? [where('account_id', '==', accountId)] : [];
+  return query(collection(db, 'transactions'), ...constraints);
+}
 
-  let results = snapshot.docs.map(
-    (d) => ({ id: d.id, ...d.data() } as Transaction)
-  );
+export function filterTransactions<T extends Pick<Transaction, 'type' | 'created_at'>>(
+  transactions: T[],
+  options: TransactionFilters
+): T[] {
+  let results = transactions;
 
-  // Client-side type filtering
   if (options.type && options.type !== 'all') {
     results = results.filter((t) => t.type === options.type);
   }
-
-  // Client-side date filtering
   if (options.startDate) {
     results = results.filter((t) => t.created_at >= options.startDate!);
   }
@@ -333,12 +329,38 @@ export async function getTransactions(options: {
     results = results.filter((t) => t.created_at <= options.endDate! + 'T23:59:59');
   }
 
-  // Client-side sorting (newest first)
-  results.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  // Newest first
+  results = [...results].sort((a, b) => b.created_at.localeCompare(a.created_at));
 
-  // Client-side limit
   const maxResults = options.maxResults || 50;
   return results.slice(0, maxResults);
+}
+
+export async function getTransactions(options: TransactionFilters): Promise<Transaction[]> {
+  const snapshot = await getDocs(transactionsQuery(options.accountId));
+  return filterTransactions(
+    snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Transaction)),
+    options
+  );
+}
+
+// Live, unfiltered transactions for one account (or all accounts). Unlike
+// getTransactions, which waits on a server round trip that can stall for good
+// on a flaky mobile connection, a listener replays the offline cache at once.
+export function subscribeToTransactions(
+  accountId: string | undefined,
+  onData: (transactions: Transaction[], meta: SnapshotMeta) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    transactionsQuery(accountId),
+    (snapshot) =>
+      onData(
+        snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Transaction)),
+        { fromCache: snapshot.metadata.fromCache }
+      ),
+    (error) => onError?.(error)
+  );
 }
 
 export async function createTransaction(params: {
