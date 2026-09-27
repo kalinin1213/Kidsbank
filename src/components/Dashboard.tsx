@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  getTransactions,
   subscribeToAccounts,
   subscribeToChildren,
   subscribeToGoals,
+  subscribeToTransactions,
+  filterTransactions,
 } from '@/lib/db';
 import ParentDashboard from './ParentDashboard';
 import ChildDashboard from './ChildDashboard';
@@ -80,7 +81,6 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
   const [slowConnection, setSlowConnection] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userAvatarUrl, setUserAvatarUrl] = useState<string | undefined>(user.avatarUrl);
-  const [refreshToken, setRefreshToken] = useState(0);
   const hasDataRef = useRef(false);
 
   // Live data. Listeners replay the offline cache immediately and then keep the
@@ -128,35 +128,22 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
     [rawAccounts, children]
   );
 
-  // Refetch the recent-activity lists whenever a balance moves (a balance change
-  // always means a new transaction) or a screen asks for a refresh.
+  // Recent activity is live too: one listener per account replays the offline
+  // cache at once and picks up new transactions without a refetch, so a
+  // stalled connection can't leave the list stale.
   const accountIdsKey = (rawAccounts ?? []).map((a) => a.id).join(',');
-  const balancesKey = (rawAccounts ?? []).map((a) => a.balance).join(',');
 
   useEffect(() => {
     const ids = accountIdsKey ? accountIdsKey.split(',') : [];
-    if (ids.length === 0) return;
-
-    let cancelled = false;
-
-    // Fetch every account in parallel — serial round trips were the bulk of the
-    // wait on a slow connection.
-    Promise.all(
-      ids.map(async (id) => [id, await getTransactions({ accountId: id, maxResults: 5 })] as const)
-    )
-      .then((entries) => {
-        if (!cancelled) setTransactions(Object.fromEntries(entries));
+    const unsubscribes = ids.map((id) =>
+      subscribeToTransactions(id, (txns) => {
+        const recent = filterTransactions(txns, { maxResults: 5 });
+        setTransactions((prev) => ({ ...prev, [id]: recent }));
       })
-      .catch(() => {
-        // Keep whatever we already have on screen.
-      });
+    );
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+  }, [accountIdsKey]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [accountIdsKey, balancesKey, refreshToken]);
-
-  const refresh = useCallback(() => setRefreshToken((t) => t + 1), []);
 
   if (rawAccounts === null) {
     return (
@@ -187,7 +174,6 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
   function handleBack() {
     setView('dashboard');
     setSelectedAccountId(null);
-    refresh();
   }
 
   // Header
@@ -294,7 +280,6 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
             goals={goals}
             selectedAccountId={selectedAccountId || (childAccount?.id ?? null)}
             isParent={user.role === 'parent'}
-            onUpdate={refresh}
           />
         )}
         {view === 'settings' && (

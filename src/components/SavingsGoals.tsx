@@ -40,7 +40,7 @@ export default function SavingsGoals({
   goals: GoalData[];
   selectedAccountId: string | null;
   isParent: boolean;
-  onUpdate: () => void;
+  onUpdate?: () => void;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [formAccountId, setFormAccountId] = useState<string>(selectedAccountId || accounts[0]?.id || '');
@@ -78,7 +78,7 @@ export default function SavingsGoals({
       setTargetAmount('');
       setTargetDate('');
       setEmoji('🎯');
-      onUpdate();
+      onUpdate?.();
     } catch {
       setError('Something went wrong');
     } finally {
@@ -89,7 +89,7 @@ export default function SavingsGoals({
   async function handleToggleComplete(goal: GoalData) {
     try {
       await updateGoal(goal.id, { is_completed: !goal.is_completed });
-      onUpdate();
+      onUpdate?.();
     } catch {
       // Ignore
     }
@@ -99,7 +99,7 @@ export default function SavingsGoals({
     if (!confirm('Delete this goal?')) return;
     try {
       await deleteGoal(goalId);
-      onUpdate();
+      onUpdate?.();
     } catch {
       // Ignore
     }
@@ -117,7 +117,7 @@ export default function SavingsGoals({
 
     try {
       await reorderGoals(reordered.map((g) => g.id));
-      onUpdate();
+      onUpdate?.();
     } catch {
       // Ignore
     }
