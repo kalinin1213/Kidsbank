@@ -44,6 +44,8 @@ export type Transaction = {
   comment: string;
   performed_by: string;
   created_at: string;
+  edited_by?: string;
+  edited_at?: string;
 };
 
 export type SavingsGoal = {
@@ -402,6 +404,91 @@ export async function createTransaction(params: {
       performed_by: params.performedBy,
       created_at: createdAt,
     });
+
+    return balance;
+  });
+
+  return { balance: newBalance };
+}
+
+/**
+ * Correct a logged transaction (parents only). Changing the amount or the date
+ * shifts the running balance of every transaction after it, so the account's
+ * balance and each affected `balance_after` are recomputed in one Firestore
+ * transaction. The chain is rebuilt backwards from the account balance, which
+ * stays the source of truth.
+ */
+export async function updateTransaction(params: {
+  transactionId: string;
+  type?: 'deposit' | 'withdrawal';
+  amount: number;
+  comment: string;
+  date?: string;
+  editedBy: string;
+}): Promise<{ balance: number }> {
+  const txnRef = doc(db, 'transactions', params.transactionId);
+
+  const newBalance = await runTransaction(db, async (transaction) => {
+    const txnDoc = await transaction.get(txnRef);
+    if (!txnDoc.exists()) throw new Error('Transaction not found');
+    const original = txnDoc.data() as Omit<Transaction, 'id'>;
+
+    const accountRef = doc(db, 'accounts', original.account_id);
+    const accountDoc = await transaction.get(accountRef);
+    if (!accountDoc.exists()) throw new Error('Account not found');
+
+    // Queries can't run inside a client transaction, so list the account's
+    // transactions first and then read each one transactionally. The account
+    // read above makes a concurrent new transaction abort and retry this one.
+    const listed = await getDocs(transactionsQuery(original.account_id));
+    if (!listed.docs.some((d) => d.id === txnRef.id)) throw new Error('Transaction not found');
+    const snaps = await Promise.all(
+      listed.docs.map((d) => (d.id === txnRef.id ? txnDoc : transaction.get(d.ref)))
+    );
+
+    // Allowances stay allowances; deposits and withdrawals may be switched.
+    const type = original.type === 'allowance' ? 'allowance' : params.type ?? original.type;
+    const magnitude = Math.round(Math.abs(params.amount) * 100) / 100;
+    const amount = type === 'withdrawal' ? -magnitude : magnitude;
+    // Keep the original time of day unless the date itself was changed.
+    const createdAt =
+      params.date && params.date !== original.created_at.split('T')[0]
+        ? new Date(params.date).toISOString()
+        : original.created_at;
+
+    const balance =
+      Math.round((accountDoc.data().balance + amount - original.amount) * 100) / 100;
+
+    const chain = snaps
+      .filter((s) => s.exists())
+      .map((s) => {
+        const data = s.data() as Omit<Transaction, 'id'>;
+        return s.id === txnRef.id
+          ? { ref: s.ref, data, amount, created_at: createdAt }
+          : { ref: s.ref, data, amount: data.amount, created_at: data.created_at };
+      })
+      .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.ref.id.localeCompare(b.ref.id));
+
+    let running = balance;
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const entry = chain[i];
+      if (entry.ref.id === txnRef.id) {
+        transaction.update(entry.ref, {
+          type,
+          amount,
+          comment: params.comment,
+          created_at: createdAt,
+          balance_after: running,
+          edited_by: params.editedBy,
+          edited_at: new Date().toISOString(),
+        });
+      } else if (entry.data.balance_after !== running) {
+        transaction.update(entry.ref, { balance_after: running });
+      }
+      running = Math.round((running - entry.amount) * 100) / 100;
+    }
+
+    transaction.update(accountRef, { balance });
 
     return balance;
   });
