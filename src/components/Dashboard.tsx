@@ -266,6 +266,7 @@ export default function Dashboard({ user, onLogout }: { user: User; onLogout: ()
             accounts={accounts}
             selectedAccountId={selectedAccountId}
             isParent={user.role === 'parent'}
+            userName={user.name}
           />
         )}
         {view === 'deposit' && (
